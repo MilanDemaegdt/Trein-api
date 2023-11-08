@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Customer Registration, Login, and Ticket Booking</title>
+</head>
+
+<body>
+  <h1>Customer Registration</h1>
+  <form id="registrationForm">
+    <label for="firstname">First Name:</label>
+    <input type="text" id="firstname" required><br>
+
+    <label for="lastname">Last Name:</label>
+    <input type="text" id="lastname" required><br>
+
+    <label for="email">Email:</label>
+    <input type="email" id="email" required><br>
+
+    <label for="password">Password:</label>
+    <input type="password" id="password" required><br>
+
+    <button type="submit">Register</button>
+  </form>
+
+  <h1>Customer Login</h1>
+  <form id="loginForm">
+    <label for="loginEmail">Email:</label>
+    <input type="email" id="loginEmail" required><br>
+
+    <label for="loginPassword">Password:</label>
+    <input type="password" id="loginPassword" required><br>
+
+    <button type="submit">Login</button>
+  </form>
+
+  <h1>Train List</h1>
+  <table id="trainList">
+    <thead>
+      <tr>
+        <th>Train ID</th>
+        <th>Departure Time</th>
+        <th>Arrival Time</th>
+        <th>Departure Station</th>
+        <th>Arrival Station</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <h1>Ticket Booking</h1>
+  <form id="ticketBookingForm">
+    <label for="trainId">Train ID:</label>
+    <input type="text" id="trainId" required><br>
+
+    <label for="dateOfTravel">Date of Travel:</label>
+    <input type="date" id="dateOfTravel" required><br>
+
+    <button type="submit">Book Ticket</button>
+  </form>
+
+
+  <script>
+    // Fetch train data
+    fetch('/api/trains/getall')
+      .then(response => response.json())
+      .then(data => {
+        const trainListTable = document.getElementById('trainList').getElementsByTagName('tbody')[0];
+
+        // Fetch station data for departure and arrival stations
+        const stationPromises = data.map(train => {
+          const departurePromise = fetch(`/api/stations/${train.departureStation}`)
+            .then(response => response.json())
+            .then(station => train.departureStation = station.name);
+
+          const arrivalPromise = fetch(`/api/stations/${train.arrivalStation}`)
+            .then(response => response.json())
+            .then(station => train.arrivalStation = station.name);
+
+          return Promise.all([departurePromise, arrivalPromise]);
+        });
+
+        // Wait for all station data to be fetched
+        Promise.all(stationPromises)
+          .then(() => {
+            data.forEach(train => {
+              const row = trainListTable.insertRow();
+
+              const trainIdCell = row.insertCell();
+              trainIdCell.textContent = train._id;
+
+              const departureTimeCell = row.insertCell();
+              departureTimeCell.textContent = train.departureTime;
+
+              const arrivalTimeCell = row.insertCell();
+              arrivalTimeCell.textContent = train.arrivalTime;
+
+              const departureStationCell = row.insertCell();
+              departureStationCell.textContent = train.departureStation;
+
+              const arrivalStationCell = row.insertCell();
+              arrivalStationCell.textContent = train.arrivalStation;
+            });
+          })
+          .catch(error => {
+            console.log('Error retrieving train data:', error);
+          });
+      })
+      .catch(error => {
+        console.log('Error retrieving train data:', error);
+      });
+
+
+
+    // Register Form Submit Event
+    document.getElementById('registrationForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+
+      const firstname = document.getElementById('firstname').value;
+      const lastname = document.getElementById('lastname').value;
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+
+      const response = await fetch('/api/customers', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ firstname, lastname, email, password })
+      });
+
+      if (response.ok) {
+        console.log('Registration successful');
+      } else {
+        console.log('Registration failed');
+      }
+    });
+
+    // Login Form Submit Event
+    document.getElementById('loginForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+
+      const email = document.getElementById('loginEmail').value;
+      const password = document.getElementById('loginPassword').value;
+
+      const response = await fetch('/api/auth', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ email, password })
+      });
+
+      if (response.ok) {
+        const authToken = await response.text();
+
+        localStorage.setItem('authToken', authToken);
+
+        console.log('Login successful');
+      } else {
+        console.log('Login failed');
+      }
+    });
+
+    // Ticket Booking Form Submit Event
+    document.getElementById('ticketBookingForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+
+      const trainId = document.getElementById('trainId').value;
+      const dateOfTravel = document.getElementById('dateOfTravel').value;
+
+      const authToken = localStorage.getItem('authToken');
+      const seatNumber = "A1";
+
+      const orderResponse = await fetch('/api/orders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-auth-token': `${authToken}`
+        },
+      });
+
+      if (!orderResponse.ok) {
+        console.log('Failed to create order');
+        return;
+      }
+
+      const order = await orderResponse.json();
+      const orderId = order._id;
+
+      const ticketResponse = await fetch('/api/tickets', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-auth-token': `${authToken}`
+        },
+        body: JSON.stringify({ trainId, seatNumber, dateOfTravel })
+      });
+
+      if (!ticketResponse.ok) {
+        console.log('Ticket booking failed');
+        return;
+      }
+
+      const ticket = await ticketResponse.json();
+      const ticketId = ticket._id;
+
+      const addTicketResponse = await fetch(`/api/orders/addTicket/${ticketId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-auth-token': `${authToken}`
+        },
+        body: JSON.stringify({ ticketId })
+      });
+
+      if (addTicketResponse.ok) {
+        console.log('Ticket added to the order successfully');
+      } else {
+        console.log('Failed to add ticket to the order');
+      }
+    });
+
+
+
+  </script>
+</body>
+
+</html>
